@@ -260,6 +260,8 @@ async def process_pending_internal_messages(
             'files': run.get('files') or [],
             'variables': run.get('variables') or {},
         }
+        if run.get('params'):
+            form_data['params'] = run['params']
         if run.get('terminal_id'):
             form_data['terminal_id'] = run['terminal_id']
 
@@ -274,6 +276,12 @@ async def delegate(
     *,
     file_ids: list[str] | None = None,
     model: str | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    max_tokens: int | None = None,
+    reasoning_effort: str | None = None,
+    system_prompt: str | None = None,
     request: Request,
     user_data: dict,
     metadata: dict,
@@ -350,9 +358,16 @@ async def delegate(
     run = {
         'model_id': run_model_id,
         'session_id': metadata.get('session_id'),
+        'params': {
+            'temperature': temperature,
+            'top_p': top_p,
+            'top_k': top_k,
+            'max_tokens': max_tokens,
+            'reasoning_effort': reasoning_effort,
+        } if any(v is not None for v in (temperature, top_p, top_k, max_tokens, reasoning_effort)) else None,
         'tool_ids': copy.deepcopy(metadata.get('tool_ids') or []),
         'skill_ids': copy.deepcopy(metadata.get('skill_ids') or []),
-        'system_prompt': metadata.get('system_prompt'),
+        'system_prompt': system_prompt if system_prompt is not None else metadata.get('system_prompt'),
         'tool_servers': [] if background else copy.deepcopy(metadata.get('tool_servers') or []),
         'filter_ids': copy.deepcopy(metadata.get('filter_ids') or []),
         'terminal_id': metadata.get('terminal_id'),
@@ -513,6 +528,8 @@ async def delegate(
                 'files': run.get('files') or [],
                 'variables': run.get('variables') or {},
             }
+            if run.get('params'):
+                form_data['params'] = run['params']
             if run.get('terminal_id'):
                 form_data['terminal_id'] = run['terminal_id']
             if run.get('tool_servers'):

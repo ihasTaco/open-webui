@@ -1683,6 +1683,12 @@ async def delegate_task(
     file_ids: list[str] | None = None,
     background: bool = False,
     model: str | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    max_tokens: int | None = None,
+    reasoning_effort: str | None = None,
+    system_prompt: str | None = None,
     __request__: Request = None,
     __user__: dict = None,
     __metadata__: dict = None,
@@ -1690,7 +1696,8 @@ async def delegate_task(
     __message_id__: str = None,
 ) -> str:
     """
-    Delegate focused work to a parallel sub-agent using the specified model and tools.
+    Delegate focused work to a parallel sub-agent with full control over the model,
+    inference parameters, and system prompt.
 
     :param task: The specific task for the sub-agent to complete
     :param context: Relevant context, decisions, or file paths for the task
@@ -1698,7 +1705,19 @@ async def delegate_task(
         do not put file IDs only in context.
     :param background: Return immediately and continue this chat when the sub-agent finishes
     :param model: Model ID to use for this sub-agent. If omitted, inherits the parent model.
-        Choose the best model for the task type — see available models in the description below.
+        Choose the best model for the task type.
+    :param temperature: Sampling temperature (0.0-2.0). Lower = more deterministic.
+        Use 0.0-0.3 for factual/correctness-critical work, 0.7-1.0 for creative tasks.
+    :param top_p: Nucleus sampling threshold (0.0-1.0). Lower = more focused on likely tokens.
+    :param top_k: Limit sampling to top K tokens. Lower = more constrained output.
+    :param max_tokens: Maximum output tokens for this sub-agent. Limit to control cost
+        and prevent runaway generation. Omit to use model default.
+    :param reasoning_effort: Thinking/reasoning depth. One of: "low", "medium", "high",
+        "max", "xhigh". Use "low" for simple tasks to save cost, "max"/"xhigh" for hard
+        reasoning (debugging, architecture). Only works with reasoning-capable models.
+    :param system_prompt: Custom system prompt for this sub-agent. Overrides the parent's
+        system prompt and the global sub-agent prompt. Use to give specialized instructions
+        for the specific task type.
     :return: Foreground result text, or a JSON dispatch handle for background work
     """
     if __request__ is None:
@@ -1708,12 +1727,24 @@ async def delegate_task(
 
     from open_webui.utils.subagents import delegate
 
+    # Validate reasoning_effort values
+    if reasoning_effort is not None:
+        valid_efforts = {'low', 'medium', 'high', 'max', 'xhigh'}
+        if reasoning_effort.lower() not in valid_efforts:
+            return f'Error: reasoning_effort must be one of: {", ".join(sorted(valid_efforts))}'
+
     return await delegate(
         task,
         context,
         background,
         file_ids=file_ids,
         model=model,
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
+        max_tokens=max_tokens,
+        reasoning_effort=reasoning_effort.lower() if reasoning_effort else None,
+        system_prompt=system_prompt,
         request=__request__,
         user_data=__user__ or {},
         metadata=__metadata__ or {},
