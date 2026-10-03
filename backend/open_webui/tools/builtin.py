@@ -1682,6 +1682,7 @@ async def delegate_task(
     context: str = '',
     file_ids: list[str] | None = None,
     background: bool = False,
+    model: str | None = None,
     __request__: Request = None,
     __user__: dict = None,
     __metadata__: dict = None,
@@ -1689,13 +1690,15 @@ async def delegate_task(
     __message_id__: str = None,
 ) -> str:
     """
-    Delegate focused work to a parallel sub-agent using the current model and tools.
+    Delegate focused work to a parallel sub-agent using the specified model and tools.
 
     :param task: The specific task for the sub-agent to complete
     :param context: Relevant context, decisions, or file paths for the task
     :param file_ids: Attached file IDs the sub-agent needs. Use this for images or files;
         do not put file IDs only in context.
     :param background: Return immediately and continue this chat when the sub-agent finishes
+    :param model: Model ID to use for this sub-agent. If omitted, inherits the parent model.
+        Choose the best model for the task type — see available models in the description below.
     :return: Foreground result text, or a JSON dispatch handle for background work
     """
     if __request__ is None:
@@ -1710,12 +1713,47 @@ async def delegate_task(
         context,
         background,
         file_ids=file_ids,
+        model=model,
         request=__request__,
         user_data=__user__ or {},
         metadata=__metadata__ or {},
         parent_chat_id=__chat_id__ or '',
         parent_message_id=__message_id__,
     )
+
+
+async def list_available_models(
+    __request__: Request = None,
+    __user__: dict = None,
+) -> str:
+    """
+    List all available models that can be used for delegation via delegate_task.
+    Returns model IDs, names, and basic metadata so the orchestrator can route
+    sub-agent tasks to the right model.
+
+    :return: JSON with available models and their IDs for use in delegate_task model parameter
+    """
+    if __request__ is None:
+        return JSONCodec.dumps({'error': 'Request context not available'})
+
+    from open_webui.models.models import Models
+
+    try:
+        available_models = await Models.get_all_models()
+        model_list = []
+        for m in available_models:
+            model_list.append({
+                'id': m.id,
+                'name': m.name or m.id,
+                'base_model_id': getattr(m, 'base_model_id', None),
+                'is_active': getattr(m, 'is_active', True),
+            })
+        return JSONCodec.dumps({
+            'count': len(model_list),
+            'models': sorted(model_list, key=lambda x: x['name']),
+        }, ensure_ascii=False)
+    except Exception as e:
+        return JSONCodec.dumps({'error': str(e)})
 
 
 async def timer(

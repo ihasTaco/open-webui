@@ -273,6 +273,7 @@ async def delegate(
     background: bool,
     *,
     file_ids: list[str] | None = None,
+    model: str | None = None,
     request: Request,
     user_data: dict,
     metadata: dict,
@@ -314,8 +315,40 @@ async def delegate(
         and await Config.get('code_interpreter.engine', 'pyodide') != 'jupyter'
     ):
         features.pop('code_interpreter')
+    parent_model_id = metadata.get('model_id') or (metadata.get('model') or {}).get('id')
+    # Allow model override for multi-model sub-agents
+    if model and model.strip():
+        # Validate the model exists
+        from open_webui.models.models import Models
+        available_models = await Models.get_all_models()
+        model_ids = [m.id for m in available_models]
+        # Also check by base_model_id and name aliases
+        model_ids_lower = {mid.lower(): mid for mid in model_ids}
+        model_name_map = {}
+        for m in available_models:
+            if m.name:
+                model_name_map[m.name.lower()] = m.id
+            if hasattr(m, 'base_model_id') and m.base_model_id:
+                model_ids_lower[m.base_model_id.lower()] = m.id
+        requested_lower = model.strip().lower()
+        resolved_id = (
+            model_ids_lower.get(requested_lower)
+            or model_name_map.get(requested_lower)
+        )
+        if resolved_id:
+            run_model_id = resolved_id
+        else:
+            available_str = ', '.join(sorted(set(m.id for m in available_models[:20])))
+            return (
+                f'Error: model "{model.strip()}" not found. '
+                f'Available models include: {available_str}'
+                + (' (and more)' if len(available_models) > 20 else '')
+            )
+    else:
+        run_model_id = parent_model_id
+
     run = {
-        'model_id': metadata.get('model_id') or (metadata.get('model') or {}).get('id'),
+        'model_id': run_model_id,
         'session_id': metadata.get('session_id'),
         'tool_ids': copy.deepcopy(metadata.get('tool_ids') or []),
         'skill_ids': copy.deepcopy(metadata.get('skill_ids') or []),

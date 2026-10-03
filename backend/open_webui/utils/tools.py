@@ -64,6 +64,7 @@ from open_webui.tools.builtin import (
     grep_knowledge_files,
     kb_exec,
     list_automations,
+    list_available_models,
     list_chat_files,
     list_knowledge,
     list_knowledge_bases,
@@ -651,7 +652,7 @@ async def get_builtin_tools(
         and getattr(request.state, 'internal', False) is not True
         and getattr(request.state, 'direct', False) is not True
     ):
-        builtin_functions.extend([delegate_task, timer])
+        builtin_functions.extend([delegate_task, timer, list_available_models])
 
     # Add memory tools when memory is enabled and the model allows this builtin category.
     if (
@@ -786,11 +787,26 @@ async def get_builtin_tools(
         )
 
         spec = get_builtin_tool_spec(func)
-        if func.__name__ == 'delegate_task' and not config.get('subagents.background_enabled'):
-            parameters = spec.get('parameters', {})
-            parameters.get('properties', {}).pop('background', None)
-            if isinstance(parameters.get('required'), list):
-                parameters['required'] = [name for name in parameters['required'] if name != 'background']
+        if func.__name__ == 'delegate_task':
+            if not config.get('subagents.background_enabled'):
+                parameters = spec.get('parameters', {})
+                parameters.get('properties', {}).pop('background', None)
+                if isinstance(parameters.get('required'), list):
+                    parameters['required'] = [name for name in parameters['required'] if name != 'background']
+            # Inject available models into the tool description
+            from open_webui.models.models import Models as ModelsDB
+            try:
+                available_models = await ModelsDB.get_all_models()
+                if available_models:
+                    model_lines = ['\n\nAvailable models for delegation (use the model parameter to select):']
+                    for m in sorted(available_models, key=lambda x: x.name or x.id):
+                        model_id = m.id
+                        model_name = m.name or model_id
+                        model_lines.append(f'  - {model_id}: {model_name}')
+                    model_lines.append('\nOmit the model parameter to use the current (parent) model.')
+                    spec['description'] = (spec.get('description', '') or '') + '\n'.join(model_lines)
+            except Exception:
+                pass  # Silently skip if model list can't be fetched
 
         tools_dict[func.__name__] = {
             'tool_id': f'builtin:{func.__name__}',
