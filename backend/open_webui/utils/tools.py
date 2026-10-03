@@ -45,6 +45,7 @@ from open_webui.models.groups import Groups
 from open_webui.models.tools import Tools
 from open_webui.models.users import UserModel
 from open_webui.tools.builtin import (
+    check_subagent_status,
     add_memory,
     ask_user,
     calculate_timestamp,
@@ -652,7 +653,7 @@ async def get_builtin_tools(
         and getattr(request.state, 'internal', False) is not True
         and getattr(request.state, 'direct', False) is not True
     ):
-        builtin_functions.extend([delegate_task, timer, list_available_models])
+        builtin_functions.extend([delegate_task, timer, list_available_models, check_subagent_status])
 
     # Add memory tools when memory is enabled and the model allows this builtin category.
     if (

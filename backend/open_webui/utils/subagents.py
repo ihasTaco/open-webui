@@ -282,6 +282,8 @@ async def delegate(
     max_tokens: int | None = None,
     reasoning_effort: str | None = None,
     system_prompt: str | None = None,
+    allowed_tools: list[str] | None = None,
+    forbidden_tools: list[str] | None = None,
     request: Request,
     user_data: dict,
     metadata: dict,
@@ -367,6 +369,8 @@ async def delegate(
         } if any(v is not None for v in (temperature, top_p, top_k, max_tokens, reasoning_effort)) else None,
         'tool_ids': copy.deepcopy(metadata.get('tool_ids') or []),
         'skill_ids': copy.deepcopy(metadata.get('skill_ids') or []),
+        'allowed_tools': allowed_tools,
+        'forbidden_tools': forbidden_tools,
         'system_prompt': system_prompt if system_prompt is not None else metadata.get('system_prompt'),
         'tool_servers': [] if background else copy.deepcopy(metadata.get('tool_servers') or []),
         'filter_ids': copy.deepcopy(metadata.get('filter_ids') or []),
@@ -501,6 +505,21 @@ async def delegate(
             subagent_system_prompt = (
                 str(config.get('subagents.system_prompt') or '').strip() or DEFAULT_SUBAGENT_SYSTEM_PROMPT
             )
+            # Apply tool scoping: filter tool_ids based on allowed_tools/forbidden_tools
+            tool_ids = list(run.get('tool_ids') or [])
+            allowed = run.get('allowed_tools')
+            forbidden = run.get('forbidden_tools')
+            if allowed is not None:
+                allowed_set = set(allowed)
+                tool_ids = [tid for tid in tool_ids
+                            if tid.replace('builtin:', '') in allowed_set
+                            or tid.replace('mcp:', '') in allowed_set]
+            elif forbidden is not None:
+                forbidden_set = set(forbidden)
+                tool_ids = [tid for tid in tool_ids
+                            if tid.replace('builtin:', '') not in forbidden_set
+                            and tid.replace('mcp:', '') not in forbidden_set]
+
             form_data = {
                 'model': run['model_id'],
                 'messages': [
@@ -521,7 +540,7 @@ async def delegate(
                 'user_message': user_message,
                 'session_id': run.get('session_id') or f'subagent:{chat_id}',
                 'background_tasks': {},
-                'tool_ids': run.get('tool_ids') or [],
+                'tool_ids': tool_ids,
                 'skill_ids': run.get('skill_ids') or [],
                 'filter_ids': run.get('filter_ids') or [],
                 'features': run.get('features') or {},
@@ -713,10 +732,14 @@ async def delegate(
         return result
 
     try:
+        # Background sub-agents get a dedicated tracking key so parent
+        # chat lifecycle (new messages, tab switches, etc.) cannot cancel them.
+        # Foreground sub-agents use the parent chat_id for normal lifecycle.
+        task_tracking_id = f'bg:{chat_id}' if background else chat_id
         _, child_task = await create_task(
             request.app.state.redis,
             run_background() if background else run_reserved(),
-            id=chat_id,
+            id=task_tracking_id,
         )
     except Exception as exc:
         if background:

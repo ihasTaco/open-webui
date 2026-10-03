@@ -1689,6 +1689,8 @@ async def delegate_task(
     max_tokens: int | None = None,
     reasoning_effort: str | None = None,
     system_prompt: str | None = None,
+    allowed_tools: list[str] | None = None,
+    forbidden_tools: list[str] | None = None,
     __request__: Request = None,
     __user__: dict = None,
     __metadata__: dict = None,
@@ -1697,13 +1699,14 @@ async def delegate_task(
 ) -> str:
     """
     Delegate focused work to a parallel sub-agent with full control over the model,
-    inference parameters, and system prompt.
+    inference parameters, system prompt, and tool permissions.
 
     :param task: The specific task for the sub-agent to complete
     :param context: Relevant context, decisions, or file paths for the task
     :param file_ids: Attached file IDs the sub-agent needs. Use this for images or files;
         do not put file IDs only in context.
-    :param background: Return immediately and continue this chat when the sub-agent finishes
+    :param background: Return immediately and continue this chat when the sub-agent finishes.
+        Background sub-agents survive parent chat restarts and new messages.
     :param model: Model ID to use for this sub-agent. If omitted, inherits the parent model.
         Choose the best model for the task type.
     :param temperature: Sampling temperature (0.0-2.0). Lower = more deterministic.
@@ -1718,6 +1721,12 @@ async def delegate_task(
     :param system_prompt: Custom system prompt for this sub-agent. Overrides the parent's
         system prompt and the global sub-agent prompt. Use to give specialized instructions
         for the specific task type.
+    :param allowed_tools: Whitelist of tool names the sub-agent can use. If set, only
+        these tools are available. Use to restrict expensive/destructive capabilities.
+        Example: ["read_file", "grep_search", "search_web"] for read-only analysis.
+    :param forbidden_tools: Blacklist of tool names to remove from the sub-agent.
+        Example: ["run_command", "write_file"] to prevent code execution/writing.
+        If both allowed_tools and forbidden_tools are set, allowed_tools wins.
     :return: Foreground result text, or a JSON dispatch handle for background work
     """
     if __request__ is None:
@@ -1745,6 +1754,8 @@ async def delegate_task(
         max_tokens=max_tokens,
         reasoning_effort=reasoning_effort.lower() if reasoning_effort else None,
         system_prompt=system_prompt,
+        allowed_tools=allowed_tools,
+        forbidden_tools=forbidden_tools,
         request=__request__,
         user_data=__user__ or {},
         metadata=__metadata__ or {},
@@ -1785,6 +1796,73 @@ async def list_available_models(
         }, ensure_ascii=False)
     except Exception as e:
         return JSONCodec.dumps({'error': str(e)})
+
+async def check_subagent_status(
+    subagent_chat_id: str,
+    __request__: Request = None,
+    __user__: dict = None,
+) -> str:
+    """
+    Check the status and current output of a background sub-agent mid-flight.
+    Use this to peek at what a sub-agent is doing without waiting for it to finish.
+
+    :param subagent_chat_id: The chat ID of the sub-agent (returned by delegate_task
+        in background mode as 'subagent_chat_id')
+    :return: JSON with status, latest content, and done flag
+    """
+    if __request__ is None:
+        return JSONCodec.dumps({'error': 'Request context not available'})
+
+    from open_webui.models.chats import Chats
+
+    try:
+        chat = await Chats.get_chat_by_id(subagent_chat_id)
+        if not chat:
+            return JSONCodec.dumps({'error': f'Sub-agent chat {subagent_chat_id} not found'})
+
+        history = (chat.chat or {}).get('history') or {}
+        messages = history.get('messages') or {}
+        current_id = history.get('currentId')
+
+        assistant = messages.get(current_id) if current_id else None
+        if not assistant:
+            for msg in sorted(messages.values(), key=lambda m: m.get('timestamp', 0), reverse=True):
+                if msg.get('role') == 'assistant':
+                    assistant = msg
+                    break
+
+        if not assistant:
+            return JSONCodec.dumps({'status': 'starting', 'content': '', 'done': False})
+
+        content = assistant.get('content') or ''
+        if isinstance(content, list):
+            content = ''.join(
+                str(item.get('text', '')) for item in content
+                if isinstance(item, dict) and item.get('type') == 'text'
+            )
+        if not content:
+            content = ''.join(
+                str(part.get('text', ''))
+                for item in (assistant.get('output') or [])
+                if item.get('type') == 'message'
+                for part in (item.get('content') or [])
+                if part.get('type') == 'output_text'
+            )
+
+        done = assistant.get('done', False)
+        error = assistant.get('error')
+        status = 'error' if error else ('completed' if done else 'running')
+
+        return JSONCodec.dumps({
+            'status': status,
+            'content': content[:5000] if content else '',
+            'done': done,
+            'error': str(error.get('content', '')) if error else None,
+            'subagent_chat_id': subagent_chat_id,
+        }, ensure_ascii=False)
+    except Exception as e:
+        return JSONCodec.dumps({'error': str(e)})
+
 
 
 async def timer(
