@@ -753,6 +753,42 @@ export const getChatListByTagName = async (token: string = '', tagName: string) 
 	}));
 };
 
+export type SubagentSummary = {
+	id: string;
+	title: string;
+	task: string;
+	model: string | null;
+	status: 'running' | 'completed' | 'error';
+	mode: string | null;
+	delegation_id: string | null;
+	created_at: number;
+	updated_at: number;
+};
+
+export const getSubagentsByChatId = async (
+	token: string,
+	id: string
+): Promise<SubagentSummary[]> => {
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${id}/subagents`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			console.error(err);
+			return [];
+		});
+
+	return res;
+};
+
 export const getChatById = async (token: string, id: string) => {
 	let error = null;
 

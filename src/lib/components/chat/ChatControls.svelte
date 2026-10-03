@@ -1,5 +1,5 @@
 <script context="module" lang="ts">
-	let savedTab: 'controls' | 'files' | 'overview' = 'controls';
+	let savedTab: 'controls' | 'files' | 'subagents' = 'controls';
 </script>
 
 <script lang="ts">
@@ -25,7 +25,7 @@
 	import Embeds from './ChatControls/Embeds.svelte';
 	import FileNav from './FileNav.svelte';
 	import PyodideFileNav from './PyodideFileNav.svelte';
-	import Overview from './Overview.svelte';
+	import SubagentsPanel from './Subagents/SubagentsPanel.svelte';
 	import { isSavedChatId } from '$lib/utils/chatId';
 
 	const i18n = getContext('i18n');
@@ -83,18 +83,18 @@
 	$: showFilesTab =
 		terminalFilesAvailable ||
 		(codeInterpreterEnabled && $config?.code?.interpreter_engine !== 'jupyter');
-	$: showOverviewTab = hasMessages;
+	$: showSubagentsTab = !!hasMessages && isSavedChatId(chatId);
 
 	// Tab fallback: if active tab becomes hidden, switch to next available
-	$: if (!showOverviewTab && activeTab === 'overview') activeTab = 'controls';
+	$: if (!showSubagentsTab && activeTab === 'subagents') activeTab = 'controls';
 	$: if (!showFilesTab && activeTab === 'files') activeTab = 'controls';
 	$: if (!showControlsTab && activeTab === 'controls') {
 		if (showFilesTab) activeTab = 'files';
-		else if (showOverviewTab) activeTab = 'overview';
+		else if (showSubagentsTab) activeTab = 'subagents';
 	}
 
 	// Auto-close if there are no visible tabs
-	$: if (!showControlsTab && !showFilesTab && !showOverviewTab) {
+	$: if (!showControlsTab && !showFilesTab && !showSubagentsTab) {
 		showControls.set(false);
 	}
 
@@ -246,15 +246,15 @@
 										{$i18n.t('Files')}
 									</button>
 								{/if}
-								{#if showOverviewTab}
+								{#if showSubagentsTab}
 									<button
 										class="px-2.5 py-1 text-sm rounded-lg transition whitespace-nowrap {activeTab ===
-										'overview'
+										'subagents'
 											? 'bg-gray-100/40 dark:bg-gray-800/25 font-normal text-gray-700 dark:text-gray-200'
 											: 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/30 dark:hover:bg-gray-800/20 hover:text-gray-600 dark:hover:text-gray-300'}"
-										on:click={() => (activeTab = 'overview')}
+										on:click={() => (activeTab = 'subagents')}
 									>
-										{$i18n.t('Overview')}
+										{$i18n.t('Sub-agents')}
 									</button>
 								{/if}
 							</div>
@@ -277,21 +277,14 @@
 						</div>
 
 						<div
-							class="flex-1 min-h-0 {activeTab === 'overview'
+							class="flex-1 min-h-0 {activeTab === 'subagents'
 								? 'h-full'
 								: activeTab === 'controls'
 									? 'overflow-y-auto px-3 pt-1'
 									: ''}"
 						>
-							{#if activeTab === 'overview'}
-								<Overview
-									{history}
-									{chatUser}
-									onNodeClick={(e) => {
-										const node = e.node;
-										showMessage(node.data.message, true);
-									}}
-								/>
+							{#if activeTab === 'subagents'}
+								<SubagentsPanel {chatId} />
 							{:else if activeTab === 'files' && terminalFilesAvailable && $selectedTerminalId}
 								<FileNav {chatId} />
 							{:else if activeTab === 'files' && codeInterpreterEnabled}
@@ -369,15 +362,15 @@
 										{$i18n.t('Files')}
 									</button>
 								{/if}
-								{#if showOverviewTab}
+								{#if showSubagentsTab}
 									<button
 										class="px-2.5 py-1 text-sm rounded-lg transition whitespace-nowrap {activeTab ===
-										'overview'
+										'subagents'
 											? 'bg-gray-100/40 dark:bg-gray-800/25 font-normal text-gray-700 dark:text-gray-200'
 											: 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/30 dark:hover:bg-gray-800/20 hover:text-gray-600 dark:hover:text-gray-300'}"
-										on:click={() => (activeTab = 'overview')}
+										on:click={() => (activeTab = 'subagents')}
 									>
-										{$i18n.t('Overview')}
+										{$i18n.t('Sub-agents')}
 									</button>
 								{/if}
 							</div>
@@ -400,26 +393,14 @@
 						</div>
 
 						<div
-							class="flex-1 min-h-0 {activeTab === 'overview'
+							class="flex-1 min-h-0 {activeTab === 'subagents'
 								? 'h-full'
 								: activeTab === 'controls'
 									? 'overflow-y-auto px-3 pt-1'
 									: ''}"
 						>
-							{#if activeTab === 'overview'}
-								<Overview
-									{history}
-									{chatUser}
-									onNodeClick={(e) => {
-										const node = e.node;
-										if (node?.data?.message?.favorite) {
-											history.messages[node.data.message.id].favorite = true;
-										} else {
-											history.messages[node.data.message.id].favorite = null;
-										}
-										showMessage(node.data.message, true);
-									}}
-								/>
+							{#if activeTab === 'subagents'}
+								<SubagentsPanel {chatId} />
 							{:else if activeTab === 'files' && terminalFilesAvailable && $selectedTerminalId}
 								<FileNav overlay={dragged} {chatId} />
 							{:else if activeTab === 'files' && codeInterpreterEnabled}

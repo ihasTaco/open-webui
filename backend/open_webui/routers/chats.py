@@ -1322,6 +1322,53 @@ async def compact_chat_by_id(
 ############################
 
 
+############################
+# GetSubagentsByChatId
+############################
+
+
+def _subagent_summary(chat) -> dict:
+    history = (chat.chat or {}).get('history') or {}
+    messages = history.get('messages') or {}
+    assistant = messages.get(history.get('currentId')) or {}
+    first_user = next(
+        (m for m in messages.values() if m.get('role') == 'user' and not m.get('parentId')),
+        {},
+    )
+    meta = chat.meta or {}
+    if assistant.get('error'):
+        state = 'error'
+    elif assistant.get('done') is False:
+        state = 'running'
+    else:
+        state = 'completed'
+    task = first_user.get('content') or ''
+    return {
+        'id': chat.id,
+        'title': chat.title,
+        'task': task.split('\n\n## Context', 1)[0],
+        'model': assistant.get('model') or ((chat.chat or {}).get('models') or [None])[0],
+        'status': state,
+        'mode': meta.get('mode'),
+        'delegation_id': meta.get('delegation_id'),
+        'created_at': chat.created_at,
+        'updated_at': chat.updated_at,
+    }
+
+
+@router.get('/{id}/subagents')
+async def get_subagents_by_chat_id(
+    id: str,
+    user=Depends(get_verified_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    parent = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
+    if not parent:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND)
+    chats = await Chats.get_internal_chats_by_parent_id(id, user.id, db=db)
+    return [_subagent_summary(chat) for chat in chats]
+
+
 @router.get('/{id}', response_model=ChatResponse | None)
 async def get_chat_by_id(
     id: str,
